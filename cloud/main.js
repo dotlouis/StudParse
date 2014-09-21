@@ -25,9 +25,6 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 		// Create the nickname attribute based on email address
 		request.object.set("nickname", nickname);
 		request.object.set("fullname", fullname);
-
-		// Assign school based on email address
-		//request.object.set("school", Parse.User.assignSchool(email));
 		
 		var schoolname;
 
@@ -63,11 +60,9 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 
 Parse.Cloud.afterSave(Parse.User, function(request){
 
-	var user = request.object;
-	// Assign roles based on email adress
-
-	// A bit like sudo otherwise the query returns undefined (ACL)
 	Parse.Cloud.useMasterKey();
+
+	var user = request.object;
 
 	var email = user.get('username');
 	var rolename;
@@ -91,12 +86,8 @@ Parse.Cloud.afterSave(Parse.User, function(request){
 					role.getUsers().add(user);
 					role.save();
 				}
-				else{
-					console.log("creating new role: ", rolename);
-					var newRole = new Parse.Role(rolename, new Parse.ACL());
-					newRole.getUsers().add(user);
-					newRole.save();
-				}
+				else
+					throw "Unknown role: "+rolename;
 			},
 			error: function(error) {
 				throw "[ERROR] " + error.code + " : " + error.message;
@@ -106,4 +97,37 @@ Parse.Cloud.afterSave(Parse.User, function(request){
 	catch(error){
 		console.log(error);
 	}
+});
+
+Parse.Cloud.beforeSave(Parse.Role, function(request, response) {
+
+	Parse.Cloud.useMasterKey();
+
+	var name = request.object.get("name");
+	var permission = new Parse.ACL({});
+
+	try{
+
+		if(name=="admin")
+			permission.setRoleReadAccess(request.object,true);
+
+		request.object.setACL(permission);
+		response.success();
+	}
+	catch(error){
+		console.log(error);
+		response.error(error);
+	}
+});
+
+Parse.Cloud.define("addUserToAdminRole", function(request, response){
+	Parse.Cloud.useMasterKey();
+	new Parse.Query(Parse.Role).equalTo('name','admin').first().then(function(result){
+		result.getUsers().add(request.user);
+		result.save();
+		response.success(result);
+	},
+	function(error){
+		response.error(error);
+	})
 });
