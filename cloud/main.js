@@ -36,7 +36,7 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 
 
 		var query = new Parse.Query("School");
-		query.equalTo("shortname", schoolname);
+		query.equalTo("nickname", schoolname);
 		query.first ( {
 			success: function(school) {
 				if(!_.isUndefined(school)){
@@ -119,6 +119,46 @@ Parse.Cloud.beforeSave(Parse.Role, function(request, response) {
 		response.error(error);
 	}
 });
+
+Parse.Cloud.beforeSave("Room", function(request, response) {
+
+	Parse.Cloud.useMasterKey();
+	var room = request.object;
+	var school_relation = room.relation('school');
+
+	try{
+		// Automatically add a relation to FBS
+		new Parse.Query("School").equalTo('nickname','FBS').first().then(function(school){
+			school_relation.add(school);
+			response.success();
+		},function(error){throw error;});
+	}
+	catch(error){
+		console.log(error);
+		response.error(error);
+	}
+});
+
+
+Parse.Cloud.beforeSave("Course", function(request, response) {
+
+	Parse.Cloud.useMasterKey();
+	var course = request.object;
+	var school_relation = course.relation('school');
+
+	try{
+		// Automatically add a relation to FBS
+		new Parse.Query("School").equalTo('nickname','FBS').first().then(function(school){
+			school_relation.add(school);
+			response.success();
+		},function(error){throw error;});
+	}
+	catch(error){
+		console.log(error);
+		response.error(error);
+	}
+});
+
 
 Parse.Cloud.define("addUserToAdminRole", function(request, response){
 	Parse.Cloud.useMasterKey();
