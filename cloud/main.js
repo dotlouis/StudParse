@@ -52,10 +52,7 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 			// return crafted User
 			response.success();
 				
-		}
-		catch(error){
-			response.error(error);
-		}
+		} catch(error){response.error(error);}
 	});
 });
 
@@ -74,33 +71,63 @@ Parse.Cloud.afterSave(Parse.User, function(request){
 	if(schoolpart.indexOf('student') == -1)
 		rolename = "teacher";
 
-	// get the role based on rolename
-	new Parse.Query(Parse.Role).equalTo('name',rolename).first().then(function(role){
-		role.getUsers().add(user);
-		role.save();
-	},function(error){throw error;});	
-
+	try{
+		// get the role based on rolename
+		new Parse.Query(Parse.Role).equalTo('name',rolename).first().then(function(role){
+			// if role does not exist, make it so
+			if(!role)
+				role = new Parse.Role(rolename, new Parse.ACL());
+			// then add relation
+			role.getUsers().add(user);
+			role.save();
+		},function(error){throw error;});
+	} catch(error){response.error(error);}
 });
+
+
 
 Parse.Cloud.beforeSave(Parse.Role, function(request, response) {
 
 	Parse.Cloud.useMasterKey();
 
-	var name = request.object.get("name");
-	var permission = new Parse.ACL({});
+	var role = request.object;
+	var permission = new Parse.ACL();
 
 	try{
-
-		//if(name=="admin")
-			permission.setRoleReadAccess(request.object,true);
-
-		request.object.setACL(permission);
+		// by default the student have read access
+		permission.setRoleReadAccess("student",true);
+		// we set permission to read access "student" role
+		// which allows same access for his child roles
+		role.setACL(permission);
 		response.success();
-	}
-	catch(error){
-		response.error(error);
-	}
+	} catch(error){response.error(error);}
 });
+
+Parse.Cloud.afterSave(Parse.Role, function(request){
+
+	Parse.Cloud.useMasterKey();
+
+	var role = request.object;
+
+	try{
+		// if role is other than student, we make it child of student role
+		// for it to herit the same access
+		if (role.getName() != 'student'){
+			new Parse.Query(Parse.Role).equalTo('name','student').first().then(function(studentRole){
+				// However if student role does not exists, create it
+				if(!studentRole)
+					studentRole = new Parse.Role("student", new Parse.ACL());
+
+				// Then add the afterSaved role to studentRole
+				studentRole.getRoles().add(role);
+				studentRole.save();
+			}, function(error){throw error;});
+		}
+	} catch(error){response.error(error);}
+
+});
+
+
 
 Parse.Cloud.beforeSave("Room", function(request, response) {
 
@@ -114,10 +141,7 @@ Parse.Cloud.beforeSave("Room", function(request, response) {
 			school_relation.add(school);
 			response.success();
 		},function(error){throw error;});
-	}
-	catch(error){
-		response.error(error);
-	}
+	} catch(error){response.error(error);}
 });
 
 
@@ -133,10 +157,7 @@ Parse.Cloud.beforeSave("Course", function(request, response) {
 			school_relation.add(school);
 			response.success();
 		},function(error){throw error;});
-	}
-	catch(error){
-		response.error(error);
-	}
+	} catch(error){response.error(error);}
 });
 
 
@@ -150,10 +171,7 @@ Parse.Cloud.beforeSave("School", function(request, response) {
 
 	try{
 		response.success();
-	}
-	catch(error){
-		response.error(error);
-	}
+	} catch(error){response.error(error);}
 });
 
 Parse.Cloud.define("addUserToAdminRole", function(request, response){
