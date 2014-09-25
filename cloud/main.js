@@ -10,93 +10,76 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 	// A bit like sudo otherwise the query returns undefined (ACL)
 	Parse.Cloud.useMasterKey();
 
-	var username = request.object.get("username");
-	var email = request.object.get("username");
-
-	// Email address based on this format: firstname.lastname@[student.]school.com
-	// Students: simon.wicart@student.france-bs.com
-	// Not student: phillipe.caillot@france-bs.com
+	var user = request.object;
+	var email = user.getEmail();
+	var school_relation = user.relation('school');
 	
-	var namepart = email.substring(0, email.indexOf('@'));
-	var nickname = namepart.substring(0, email.indexOf('.')).capitalize();
-	var fullname = nickname+" "+namepart.substring(email.indexOf('.')+1).capitalize();
+	// the school is choosen via the client
+	// var school = user.get('school');
 
-	try{
-		// Create the nickname attribute based on email address
-		request.object.set("nickname", nickname);
-		request.object.set("fullname", fullname);
-		
-		var schoolname;
+	// placeholder to allow creation from the Parse Data Browser (since there is only one school)
+	new Parse.Query("School").first().then(function(school){
 
-		// if the email contains @france-bs, assign the student school
-		if(email.substring(email.indexOf('@')).indexOf('france-bs') > -1)
-			schoolname = 'FBS';
-		else
-			schoolname = 'FBS'; // default school
+		try{
 
+			// Email should be provided from client even if Parse only make username property mandatory
+			// Studapp client will by default provide email == username
+			if(!email)
+				throw "No valid email provided";
 
-		var query = new Parse.Query("School");
-		query.equalTo("nickname", schoolname);
-		query.first ( {
-			success: function(school) {
-				if(!_.isUndefined(school)){
-					request.object.set('school', school);
-					response.success();
-				}
-				else
-					response.error("No school matches this email adress "+email);
-			},
-			error: function(error) {
-				throw "[ERROR] " + error.code + " : " + error.message;
-			}
-		});
-			
-	}
-	catch(error){
-		console.log(error);
-		response.error(error);
-	}
+			if(!school)
+				throw "No valid school provided";
+
+			if(!email.match(school.get('emailPattern').global))
+				throw "The email provided is not one of the "+school.get('name')+" school";
+
+			// Email address based on this format: firstname.lastname@[student.]school.com
+			// Students: simon.wicart@student.france-bs.com
+			// Not student: phillipe.caillot@france-bs.com
+			var namepart = email.substring(0, email.indexOf('@'));
+			var nickname = namepart.substring(0, email.indexOf('.')).capitalize();
+			var fullname = nickname+" "+namepart.substring(namepart.indexOf('.')+1).capitalize();
+			// var schoolpart = email.substring(email.indexOf('@')+1, email.lastIndexOf('.'));
+			// var schoolname = schoolpart.substring(schoolpart.indexOf('.')+1);
+
+			// Set newly made attributes
+			user.set("nickname", nickname);
+			user.set("fullname", fullname);
+
+			// Add a relation to selected school
+			school_relation.add(school);
+
+			// return crafted User
+			response.success();
+				
+		}
+		catch(error){
+			response.error(error);
+		}
+	});
 });
 
+
+// http://stackoverflow.com/questions/24180379/creating-relations-in-parse-com-with-multiple-classes-javascript-sdk
 Parse.Cloud.afterSave(Parse.User, function(request){
 
 	Parse.Cloud.useMasterKey();
 
 	var user = request.object;
+	var email = user.getEmail();
+	var rolename = "student"; // default role
+	var schoolpart = email.substring(email.indexOf('@')+1, email.lastIndexOf('.'));
 
-	var email = user.get('username');
-	var rolename;
+	// if email does not contain "student" assign teacher role; else student role by default
+	if(schoolpart.indexOf('student') == -1)
+		rolename = "teacher";
 
-	// if the email contains @etu, assign the student role
-	if(email.substring(email.indexOf('@')).indexOf('student') > -1)
-		rolename = 'student';
-	else if(email.substring(email.indexOf('@')).indexOf('admin') > -1)
-		rolename = 'admin';
-	else
-		rolename = 'teacher'; //default role
+	// get the role based on rolename
+	new Parse.Query(Parse.Role).equalTo('name',rolename).first().then(function(role){
+		role.getUsers().add(user);
+		role.save();
+	},function(error){throw error;});	
 
-	try{
-		var query = new Parse.Query(Parse.Role);
-		query.equalTo("name", rolename);
-		query.first ( {
-			success: function(role) {
-
-				// if the role does not already exist create it
-				if(!_.isUndefined(role)){
-					role.getUsers().add(user);
-					role.save();
-				}
-				else
-					throw "Unknown role: "+rolename;
-			},
-			error: function(error) {
-				throw "[ERROR] " + error.code + " : " + error.message;
-			}
-		});
-	}
-	catch(error){
-		console.log(error);
-	}
 });
 
 Parse.Cloud.beforeSave(Parse.Role, function(request, response) {
@@ -108,14 +91,13 @@ Parse.Cloud.beforeSave(Parse.Role, function(request, response) {
 
 	try{
 
-		if(name=="admin")
+		//if(name=="admin")
 			permission.setRoleReadAccess(request.object,true);
 
 		request.object.setACL(permission);
 		response.success();
 	}
 	catch(error){
-		console.log(error);
 		response.error(error);
 	}
 });
@@ -134,7 +116,6 @@ Parse.Cloud.beforeSave("Room", function(request, response) {
 		},function(error){throw error;});
 	}
 	catch(error){
-		console.log(error);
 		response.error(error);
 	}
 });
@@ -154,11 +135,26 @@ Parse.Cloud.beforeSave("Course", function(request, response) {
 		},function(error){throw error;});
 	}
 	catch(error){
-		console.log(error);
 		response.error(error);
 	}
 });
 
+
+Parse.Cloud.beforeSave("School", function(request, response) {
+
+	Parse.Cloud.useMasterKey();
+	var globalPattern = new RegExp("^[a-z]+\.[a-z]+@[a-z]*\.?france-bs\.com$");
+
+	// Set emailPattern to France-bs regexp by default
+	request.object.set('emailPattern', {global: globalPattern});
+
+	try{
+		response.success();
+	}
+	catch(error){
+		response.error(error);
+	}
+});
 
 Parse.Cloud.define("addUserToAdminRole", function(request, response){
 	Parse.Cloud.useMasterKey();
