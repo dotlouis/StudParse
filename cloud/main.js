@@ -13,7 +13,7 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 	var user = request.object;
 	var email = user.getEmail();
 	var school_relation = user.relation('school');
-	
+
 	// the school is choosen via the client
 	// var school = user.get('school');
 
@@ -51,7 +51,7 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 
 			// return crafted User
 			response.success();
-				
+
 		} catch(error){response.error(error);}
 	});
 });
@@ -69,7 +69,10 @@ Parse.Cloud.afterSave(Parse.User, function(request){
 
 	// if email does not contain "student" assign teacher role; else student role by default
 	if(schoolpart.indexOf('student') == -1)
-		rolename = "teacher";
+        if(schoolpart.indexOf('admin') == -1)
+            rolename = 'teacher';
+        else
+            rolename = 'admin';
 
 	try{
 		// get the role based on rolename
@@ -94,8 +97,12 @@ Parse.Cloud.beforeSave(Parse.Role, function(request, response) {
 	var permission = new Parse.ACL();
 
 	try{
+        // admin have all rights
+        permission.setRoleReadAccess('admin', true);
+        permission.setRoleWriteAccess('admin', true);
+
 		// by default the student have read access
-		permission.setRoleReadAccess("student",true);
+		permission.setRoleReadAccess('student',true);
 		// we set permission to read access "student" role
 		// which allows same access for his child roles
 		role.setACL(permission);
@@ -110,9 +117,13 @@ Parse.Cloud.afterSave(Parse.Role, function(request){
 	var role = request.object;
 
 	try{
-		// if role is other than student, we make it child of student role
-		// for it to herit the same access
-		if (role.getName() != 'student'){
+        if (role.getName() == 'admin'){
+            // do nothing, admins have rights for eveything based on
+            // security configured in the data browser
+        }
+		// if role is other than student (teacher or groups),
+        // we make it child of student role for it to herit the same access
+		else if (role.getName() != 'student'){
 			new Parse.Query(Parse.Role).equalTo('name','student').first().then(function(studentRole){
 				// However if student role does not exists, create it
 				if(!studentRole)
