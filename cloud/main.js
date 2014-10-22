@@ -12,13 +12,12 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 
 	var user = request.object;
 	var email = user.getEmail();
-	var school_relation = user.relation('school');
 
 	// the school is choosen via the client
 	// var school = user.get('school');
 
 	// placeholder to allow creation from the Parse Data Browser (since there is only one school)
-	new Parse.Query("School").first().then(function(school){
+	new Parse.Query('School').first().then(function(school){
 
 		try{
 
@@ -45,9 +44,6 @@ Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 			// Set newly made attributes
 			user.set("nickname", nickname);
 			user.set("fullname", fullname);
-
-			// Add a relation to selected school
-			school_relation.add(school);
 
 			// return crafted User
 			response.success();
@@ -84,6 +80,13 @@ Parse.Cloud.afterSave(Parse.User, function(request){
 			role.getUsers().add(user);
 			role.save();
 		},function(error){throw error;});
+
+        // for now add to fbs by default
+        new Parse.Query('School').equalTo('nickname',"FBS").first().then(function(school){
+            // add relation
+            school.relation('users').add(user);
+            school.save();
+        },function(error){throw error;});
 	} catch(error){response.error(error);}
 });
 
@@ -147,6 +150,9 @@ Parse.Cloud.beforeSave("Room", function(request, response) {
 	var school_relation = room.relation('school');
 
 	try{
+        // concat type and name for fullname
+        room.set('fullname',room.get('type')+' '+room.get('name'));
+
 		// Automatically add a relation to FBS
 		new Parse.Query("School").equalTo('nickname','FBS').first().then(function(school){
 			school_relation.add(school);
