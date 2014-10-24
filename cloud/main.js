@@ -190,15 +190,3 @@ Parse.Cloud.beforeSave("School", function(request, response) {
 		response.success();
 	} catch(error){response.error(error);}
 });
-
-Parse.Cloud.define("addUserToAdminRole", function(request, response){
-	Parse.Cloud.useMasterKey();
-	new Parse.Query(Parse.Role).equalTo('name','admin').first().then(function(result){
-		result.getUsers().add(request.user);
-		result.save();
-		response.success(result);
-	},
-	function(error){
-		response.error(error);
-	})
-});
