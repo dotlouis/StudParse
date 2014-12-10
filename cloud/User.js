@@ -1,49 +1,78 @@
+var tools = require('cloud/tools.js');
+
 Parse.Cloud.beforeSave(Parse.User, function(request, response) {
 
     // A bit like sudo otherwise the query returns undefined (ACL)
     Parse.Cloud.useMasterKey();
 
     var user = request.object;
-    var email = user.getEmail();
+    var id = user.getUsername();
 
-    // the school is choosen via the client
-    // var school = user.get('school');
+    getUserResource(id).then(function(resourceNumber){
+        if(resourceNumber == -1)
+            response.error("Unable to find resource number in page");
+        else{
+            user.set('resource', parseInt(resourceNumber));
+            getResourceName(resourceNumber).then(function(name){
+                console.log(name.fullname);
+                user.set('fullname', name.fullname);
+                user.set('nickname', name.firstname);
+                response.success();
+            },function(error){response.error(error);});
+        }
+    }, function(error){response.error(error);});
 
-    // placeholder to allow creation from the Parse Data Browser (since there is only one school)
-    new Parse.Query('School').first().then(function(school){
-
-        try{
-
-            // Email should be provided from client even if Parse only make username property mandatory
-            // Studapp client will by default provide email == username
-            if(!email)
-                throw "No valid email provided";
-
-            if(!school)
-                throw "No valid school provided";
-
-            if(!email.match(school.get('emailPattern').global))
-                throw "The email provided is not one of the "+school.get('name')+" school";
-
-            // Email address based on this format: firstname.lastname@[student.]school.com
-            // Students: simon.wicart@student.france-bs.com
-            // Not student: phillipe.caillot@france-bs.com
-            var namepart = email.substring(0, email.indexOf('@'));
-            var nickname = namepart.substring(0, email.indexOf('.')).capitalize();
-            var fullname = nickname+" "+namepart.substring(namepart.indexOf('.')+1).capitalize();
-            // var schoolpart = email.substring(email.indexOf('@')+1, email.lastIndexOf('.'));
-            // var schoolname = schoolpart.substring(schoolpart.indexOf('.')+1);
-
-            // Set newly made attributes
-            user.set("nickname", nickname);
-            user.set("fullname", fullname);
-
-            // return crafted User
-            response.success();
-
-        } catch(error){response.error(error);}
-    });
 });
+
+function getResourceName(resourceId){
+    // we request the info page
+    return Parse.Cloud.httpRequest({
+        url: 'https://aderead6.univ-orleans.fr/jsp/custom/modules/infos/members.jsp',
+        params: 'login=etuWeb&password=&projectId=2&uniqueId='+(resourceId.toString())
+    }).then(function(httpResponse){
+        var dom = httpResponse.text;
+
+        // we look for the name of the resource
+        var startOfName = dom.indexOf('<span class="title">')+20;
+        var endOfName = dom.indexOf('</span><br><br>');
+        var extracted = dom.substring(startOfName, endOfName);
+        var firstname = extracted.substring(0, extracted.indexOf(' ')).toString().capitalize();
+        var lastname = extracted.substring(extracted.indexOf(' ')+1).toString().capitalize();
+        var fullname = firstname+" "+lastname;
+
+        return {fullname: fullname, firstname: firstname, lastname:lastname};
+
+    },function(error){return error;});
+};
+
+function getUserResource(userId){
+    // we request the ENT page
+    return Parse.Cloud.httpRequest({
+            url: 'http://www.univ-orleans.fr/EDTWeb/edt',
+            params: {
+                project: '2014-2015',
+                action: 'displayWeeksPeople',
+                person: userId
+            }
+        }).then(function(httpResponse){
+            var dom = httpResponse.text;
+
+            // we look for the export url to get the resources and project number
+            var startOfUrl = dom.indexOf('href=\"http://www.univ-orleans.fr/EDTWeb/export?');
+            var endOfUrl = dom.indexOf('\u0026amp;type=ical\" target=\"Export\"');
+            if(startOfUrl == -1 || endOfUrl == -1)
+                return -1;
+            else{
+                var exportUrl = dom.substring(startOfUrl,endOfUrl);
+                var project = exportUrl.substring(exportUrl.indexOf('project=')+8, exportUrl.indexOf('\u0026amp;resources='));
+                var resource = exportUrl.substring(exportUrl.indexOf('resources=')+10);
+                if(resource == "")
+                    return -1;
+                else
+                    return resource;
+            }
+        },function(error){return error;});
+};
 
 
 // http://stackoverflow.com/questions/24180379/creating-relations-in-parse-com-with-multiple-classes-javascript-sdk
@@ -52,16 +81,16 @@ Parse.Cloud.afterSave(Parse.User, function(request){
     Parse.Cloud.useMasterKey();
 
     var user = request.object;
-    var email = user.getEmail();
+    // var email = user.getEmail();
     var rolename = "student"; // default role
-    var schoolpart = email.substring(email.indexOf('@')+1, email.lastIndexOf('.'));
+    // var schoolpart = email.substring(email.indexOf('@')+1, email.lastIndexOf('.'));
 
     // if email does not contain "student" assign teacher role; else student role by default
-    if(schoolpart.indexOf('student') == -1)
-        if(schoolpart.indexOf('admin') == -1)
-            rolename = 'teacher';
-        else
-            rolename = 'admin';
+    // if(schoolpart.indexOf('student') == -1)
+    //     if(schoolpart.indexOf('admin') == -1)
+    //         rolename = 'teacher';
+    //     else
+    //         rolename = 'admin';
 
     try{
         // get the role based on rolename
@@ -74,8 +103,8 @@ Parse.Cloud.afterSave(Parse.User, function(request){
             role.save();
         },function(error){throw error;});
 
-        // for now add to fbs by default
-        new Parse.Query('School').equalTo('nickname',"FBS").first().then(function(school){
+        // for now add to the default school
+        new Parse.Query('School').first().then(function(school){
             // add relation
             school.relation('users').add(user);
             school.save();
